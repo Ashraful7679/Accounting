@@ -45,3 +45,11 @@ export class AccountingError extends AppError {
         super(422, message);
     }
 }
+
+export class BadRequestError extends Error {
+    constructor(message: string) {
+        super(message);
+        this.name = "BadRequestError";
+    }
+}
+
