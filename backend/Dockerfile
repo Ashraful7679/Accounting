@@ -49,20 +49,23 @@ RUN apt-get update && apt-get install -y \
 # Set working directory
 WORKDIR /app
 
-# Copy package.json and package-lock.json
-COPY package*.json ./
+# Copy package.json & package-lock.json first
+COPY package.json package-lock.json ./ 
 
-# Install Node dependencies
+# Copy Prisma schema before installing
+COPY prisma ./prisma
+
+# Install dependencies
 RUN npm install
 
-# Copy all backend source files
+# Copy the rest of the backend files
 COPY . .
 
-# Build TypeScript code
+# Build TypeScript
 RUN npm run build
 
-# Expose backend port
+# Expose port
 EXPOSE 5000
 
 # Start the server
-CMD ["npm", "run", "start"]
+CMD ["node", "dist/server.js"]
