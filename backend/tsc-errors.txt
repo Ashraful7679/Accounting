@@ -1,0 +1,11 @@
+﻿src/middleware/auth.ts(6,5): error TS6133: 'reply' is declared but its value is never read.
+src/middleware/validation.ts(6,44): error TS6133: 'reply' is declared but its value is never read.
+src/middleware/validation.ts(19,44): error TS6133: 'reply' is declared but its value is never read.
+src/modules/dashboard/dashboard.controller.ts(11,29): error TS6133: 'request' is declared but its value is never read.
+src/modules/invoices/invoices.controller.ts(5,10): error TS2305: Module '"@prisma/client"' has no exported member 'AuditAction'.
+src/modules/reports/reports.service.ts(4,27): error TS6133: 'startDate' is declared but its value is never read.
+src/modules/reports/reports.service.ts(4,47): error TS6133: 'endDate' is declared but its value is never read.
+src/modules/reports/reports.service.ts(112,15): error TS6133: 'date' is declared but its value is never read.
+src/utils/excel.ts(2,1): error TS6133: 'format' is declared but its value is never read.
+src/utils/pdf.ts(83,5): error TS2740: Type 'Uint8Array<ArrayBufferLike>' is missing the following properties from type 'Buffer<ArrayBufferLike>': write, toJSON, equals, compare, and 66 more.
+src/utils/pdf.ts(150,5): error TS2740: Type 'Uint8Array<ArrayBufferLike>' is missing the following properties from type 'Buffer<ArrayBufferLike>': write, toJSON, equals, compare, and 66 more.

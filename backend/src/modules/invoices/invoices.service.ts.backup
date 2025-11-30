@@ -1,0 +1,206 @@
+import { InvoicesRepository, InvoiceStatus } from './invoices.repository';
+import { CreateInvoiceInput, UpdateInvoiceInput } from './invoices.schema';
+import { NotFoundError, AccountingError } from '../../utils/errors';
+import { generateNextNumber, createInvoiceJournalEntry } from '../../utils/accounting';
+import prisma from '../../config/database';
+
+export class InvoicesService {
+    private repository: InvoicesRepository;
+
+    constructor() {
+        this.repository = new InvoicesRepository();
+    }
+
+    async getInvoices(
+        page: number = 1,
+        limit: number = 50,
+        filters?: any
+    ) {
+        const skip = (page - 1) * limit;
+        const { invoices, total } = await this.repository.findAll(skip, limit, filters);
+
+        return {
+            invoices,
+            pagination: {
+                page,
+                limit,
+                total,
+                totalPages: Math.ceil(total / limit),
+            },
+        };
+    }
+
+    async getInvoiceById(id: string) {
+        const invoice = await this.repository.findById(id);
+        if (!invoice) {
+
+            const items = await Promise.all(
+                data.items.map(async (item) => {
+                    const itemTotal = item.quantity * item.unitPrice;
+                    subtotal += itemTotal;
+
+                    // Calculate tax if tax code is provided
+                    let itemTaxAmount = 0;
+                    if (item.taxCodeId) {
+                        const taxCode = await prisma.taxCode.findUnique({
+                            where: { id: item.taxCodeId },
+                            include: {
+                                taxRates: {
+                                    where: {
+                                        effectiveFrom: { lte: new Date() },
+                                        OR: [
+                                            { effectiveTo: null },
+                                            { effectiveTo: { gte: new Date() } },
+                                        ],
+                                    },
+                                    orderBy: { effectiveFrom: 'desc' },
+                                    take: 1,
+                                },
+                            },
+                        });
+
+                        if (taxCode && taxCode.taxRates.length > 0) {
+                            itemTaxAmount = (itemTotal * taxCode.taxRates[0].rate) / 100;
+                            taxAmount += itemTaxAmount;
+                        }
+                    }
+
+                    return {
+                        ...item,
+                        taxAmount: itemTaxAmount,
+                        total: itemTotal + itemTaxAmount,
+                    };
+                })
+            );
+
+            const total = subtotal + taxAmount;
+
+            // Create invoice
+            const invoice = await this.repository.create({
+                invoiceNumber,
+                customerId: data.customerId,
+                date: new Date(data.date),
+                dueDate: new Date(data.dueDate),
+                reference: data.reference,
+                notes: data.notes,
+                subtotal,
+                taxAmount,
+                total,
+                paidAmount: 0,
+                balanceDue: total,
+                status: InvoiceStatus.DRAFT,
+                createdById: userId,
+                items: {
+                    create: items,
+                },
+            });
+
+            return invoice;
+        }
+
+    async updateInvoice(id: string, data: UpdateInvoiceInput) {
+            const invoice = await this.getInvoiceById(id);
+
+            if (invoice.status !== InvoiceStatus.DRAFT) {
+                throw new AccountingError('Only draft invoices can be updated');
+            }
+
+            // Recalculate if items are provided
+            let updateData: any = {
+                date: data.date ? new Date(data.date) : undefined,
+                dueDate: data.dueDate ? new Date(data.dueDate) : undefined,
+                reference: data.reference,
+                notes: data.notes,
+            };
+
+            if (data.items) {
+                // Delete existing items
+                await prisma.invoiceItem.deleteMany({
+                    where: { invoiceId: id },
+                });
+
+                // Recalculate totals
+                let subtotal = 0;
+                let taxAmount = 0;
+
+                const items = await Promise.all(
+                    data.items.map(async (item) => {
+                        const itemTotal = item.quantity * item.unitPrice;
+                        subtotal += itemTotal;
+
+                        let itemTaxAmount = 0;
+                        if (item.taxCodeId) {
+                            const taxCode = await prisma.taxCode.findUnique({
+                                where: { id: item.taxCodeId },
+                                include: {
+                                    taxRates: {
+                                        where: {
+                                            effectiveFrom: { lte: new Date() },
+                                            OR: [
+                                                { effectiveTo: null },
+                                                { effectiveTo: { gte: new Date() } },
+                                            ],
+                                        },
+                                        orderBy: { effectiveFrom: 'desc' },
+                                        take: 1,
+                                    },
+                                },
+                            });
+
+                            if (taxCode && taxCode.taxRates.length > 0) {
+                                itemTaxAmount = (itemTotal * taxCode.taxRates[0].rate) / 100;
+                                taxAmount += itemTaxAmount;
+                            }
+                        }
+
+                        return {
+                            ...item,
+                            taxAmount: itemTaxAmount,
+                            total: itemTotal + itemTaxAmount,
+                        };
+                    })
+                );
+
+                const total = subtotal + taxAmount;
+
+                updateData = {
+                    ...updateData,
+                    subtotal,
+                    taxAmount,
+                    total,
+                    balanceDue: total - invoice.paidAmount,
+                    items: {
+                        create: items,
+                    },
+                };
+            }
+
+            return await this.repository.update(id, updateData);
+        }
+
+    async deleteInvoice(id: string) {
+            const invoice = await this.getInvoiceById(id);
+
+            if (invoice.status !== InvoiceStatus.DRAFT) {
+                throw new AccountingError('Only draft invoices can be deleted');
+            }
+
+            return await this.repository.delete(id);
+        }
+
+    async postInvoice(id: string, userId: string) {
+            const invoice = await this.getInvoiceById(id);
+
+            if (invoice.status !== InvoiceStatus.DRAFT) {
+                throw new AccountingError('Invoice is already posted');
+            }
+
+            // Create journal entry
+            await createInvoiceJournalEntry(id, userId);
+
+            // Update invoice status
+            await this.repository.updateStatus(id, InvoiceStatus.POSTED);
+
+            return await this.getInvoiceById(id);
+        }
+    }
